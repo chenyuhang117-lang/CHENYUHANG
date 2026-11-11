@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>任务中心</title>
+<style>
+  :root{--bg:#0f1115;--panel:#161a21;--line:#242a34;--text:#e6e9ef;--muted:#8b93a3;--accent:#ff3b5c;--ok:#35c28a;--warn:#f0b429}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:5}
+  header h1{font-size:15px;margin:0;letter-spacing:.5px}
+  .grow{flex:1}
+  .chip{background:#10141a;border:1px solid var(--line);border-radius:999px;padding:4px 12px;color:var(--muted);font-size:12px}
+  .chip b{color:var(--text)}
+  main{max-width:1200px;margin:0 auto;padding:20px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  input,textarea{background:#0d1117;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:9px 12px;font-size:14px;font-family:inherit}
+  input{min-width:200px}
+  textarea{width:100%;min-height:180px;resize:vertical}
+  button{border:0;border-radius:8px;padding:9px 16px;font-size:14px;cursor:pointer}
+  button.primary{background:var(--accent);color:#fff}
+  button.ghost{background:#1b212b;border:1px solid var(--line);color:var(--text)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:500;white-space:nowrap}
+  .muted{color:var(--muted)}
+  .ok{color:var(--ok)}
+  .warn{color:var(--warn)}
+  .tag{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+  .tag.on{color:var(--ok);border-color:#24513c}
+  .thumb{width:130px;height:46px;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
+  .msg{font-size:13px;color:var(--muted)}
+  .tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+  .tabs button{background:none;border:0;color:var(--muted);padding:8px 14px;border-radius:8px;cursor:pointer}
+  .tabs button.on{background:#1e242e;color:var(--text)}
+  .hide{display:none}
+  .center{max-width:380px;margin:12vh auto}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>任务中心</h1>
+  <span class="chip" id="who">未登录</span>
+  <span class="chip hide" id="progress"></span>
+  <div class="grow"></div>
+  <button class="ghost hide" id="btn-logout">退出</button>
+</header>
+
+<main>
+  <!-- 登录 -->
+  <section id="view-login" class="center">
+    <div class="card">
+      <h3 style="margin-top:0">登录</h3>
+      <div class="row" style="flex-direction:column;align-items:stretch">
+        <input id="email" type="email" placeholder="邮箱">
+        <input id="password" type="password" placeholder="密码">
+        <button class="primary" id="btn-login">登录</button>
+        <span class="msg" id="login-msg"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 歌手 -->
+  <section id="view-worker" class="hide">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <b>我的任务</b><span class="msg" id="worker-msg"></span>
+      </div>
+      <table>
+        <thead><tr><th>昵称</th><th>房间</th><th>分值</th><th>等级</th><th>截图</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody id="my-tasks"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <b>池子里可以抢的任务</b>
+      <table>
+        <thead><tr><th>昵称</th><th>房间</th><th>分值</th><th>等级</th><th>截图</th><th></th></tr></thead>
+        <tbody id="pool-tasks"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 管理员 -->
+  <section id="view-admin" class="hide">
+    <div class="tabs">
+      <button data-tab="board" class="on">今日看板</button>
+      <button data-tab="import">导入候选</button>
+      <button data-tab="users">用户</button>
+    </div>
+
+    <div id="tab-board">
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <b>今日进度</b>
+          <div class="row">
+            <button class="primary" id="btn-generate">生成今日任务</button>
+            <button class="ghost" id="btn-reload">刷新</button>
+            <span class="msg" id="admin-msg"></span>
+          </div>
+        </div>
+        <table>
+          <thead><tr><th>歌手</th><th>配额</th><th>已接</th><th>完成</th><th>已加上</th><th>没通过</th><th>已回复</th><th>拉黑</th></tr></thead>
+          <tbody id="stats-body"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <b>全部任务（今日）</b>
+        <table>
+          <thead><tr><th>昵称</th><th>房间</th><th>分值</th><th>等级</th><th>归属</th><th>状态</th><th>结果</th></tr></thead>
+          <tbody id="all-tasks"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="tab-import" class="hide">
+      <div class="card">
+        <b>粘贴候选名单</b>
+        <p class="msg">每行一个，格式：<code>昵称 | 房间 | 分值 | 等级</code>，等级可省略。</p>
+        <textarea id="import-text" placeholder="月莹 | 回眸 | 1.5K | 27&#10;张三 | 星念舱 | 320 | 13"></textarea>
+        <div class="row" style="margin-top:10px">
+          <button class="primary" id="btn-import">导入</button>
+          <span class="msg" id="import-msg"></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-users" class="hide">
+      <div class="card">
+        <b>歌手账号</b>
+        <table>
+          <thead><tr><th>用户名</th><th>角色</th><th>每日配额</th><th>操作</th></tr></thead>
+          <tbody id="users-body"></tbody>
+        </table>
+        <p class="msg" style="margin-top:10px">
+          新建账号：在 Supabase → Authentication → Users 里 Add user（填邮箱+密码），
+          注册后会自动档案；回来这里把配额和角色改好。
+        </p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = (n) => (n === null || n === undefined || n === '') ? '-' : Number(n).toLocaleString();
+
+const sb = supabase.createClient(CFG.url, CFG.key, {auth: {persistSession: true}});
+let me = null;      // {id, username, role, quota}
+
+function toast(msg, id='login-msg') { const el = $(id); if (el) el.textContent = msg; }
+
+async function loadProfile(userId) {
+  const {data, error} = await sb.from('profiles').select('*').eq('id', userId).maybeSingle();
+  if (error) { console.warn(error); return null; }
+  return data;
+}
+
+async function boot() {
+  const {data: {session}} = await sb.auth.getSession();
+  if (!session) { show('login'); return; }
+  me = await loadProfile(session.user.id);
+  if (!me) {
+    const email = session.user.email || '';
+    me = {id: session.user.id, username: email.split('@')[0], role: 'worker', quota: 10};
+  }
+  $('who').textContent = `${me.username || '我'} · ${me.role === 'admin' ? '管理员' : '歌手'}`;
+  $('btn-logout').classList.remove('hide');
+  if (me.role === 'admin') { show('admin'); loadBoard(); loadUsers(); }
+  else { show('worker'); loadWorker(); }
+}
+
+function show(name) {
+  ['login','worker','admin'].forEach(v => $('view-' + v).classList.add('hide'));
+  $('view-' + name).classList.remove('hide');
+}
+
+// ---------- 登录 ----------
+$('btn-login').onclick = async () => {
+  const email = $('email').value.trim();
+  const password = $('password').value;
+  if (!email || !password) { toast('填邮箱和密码'); return; }
+  const {error} = await sb.auth.signInWithPassword({email, password});
+  if (error) { toast('登录失败：' + error.message); return; }
+  toast('');
+  boot();
+};
+
+$('btn-logout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+// ---------- 歌手 ----------
+const today = () => new Date().toLocaleDateString('sv-SE');   // YYYY-MM-DD 本地
+
+async function loadWorker() {
+  const {data: mine, error} = await sb.from('tasks').select('*')
+    .eq('assigned_to', me.id).eq('work_date', today())
+    .order('score_value', {ascending: false});
+  if (error) { toast(error.message, 'worker-msg'); return; }
+
+  const done = (mine || []).filter(t => t.status === 'done').length;
+  const total = Math.max(me.quota || 10, done);
+  $('progress').textContent = `今日完成 ${done}/${total}`;
+  $('progress').classList.remove('hide');
+
+  $('my-tasks').innerHTML = (mine || []).map(t => `
+    <tr>
+      <td>${esc(t.nickname)}</td>
+      <td class="muted">${esc(t.room || '-')}</td>
+      <td>${esc(t.score || '-')}</td>
+      <td>${t.level ? 'L' + t.level + ' <span class="muted">$' + fmt(t.usd) + '</span>' : '-'}</td>
+      <td>${t.shot ? `<a href="${esc(t.shot)}" target="_blank"><img class="thumb" src="${esc(t.shot)}"></a>` : '-'}</td>
+      <td>${statusTag(t.status)}</td>
+      <td>${actions(t)}</td>
+    </tr>`).join('') || '<tr><td colspan="7" class="muted">今天还没有任务</td></tr>';
+
+  bindActions();
+
+  const {data: pool} = await sb.from('tasks').select('*')
+    .eq('status', 'pool').is('assigned_to', null)
+    .order('score_value', {ascending: false}).limit(50);
+  $('pool-tasks').innerHTML = (pool || []).map(t => `
+    <tr>
+      <td>${esc(t.nickname)}</td>
+      <td class="muted">${esc(t.room || '-')}</td>
+      <td>${esc(t.score || '-')}</td>
+      <td>${t.level ? 'L' + t.level : '-'}</td>
+      <td>${t.shot ? `<a href="${esc(t.shot)}" target="_blank"><img class="thumb" src="${esc(t.shot)}"></a>` : '-'}</td>
+      <td><button class="ghost" data-claim="${t.id}">抢</button></td>
+    </tr>`).join('') || '<tr><td colspan="6" class="muted">池子是空的</td></tr>';
+
+  $('pool-tasks').querySelectorAll('button[data-claim]').forEach(btn => {
+    btn.onclick = async () => {
+      const {error} = await sb.rpc('claim_task', {p_task: Number(btn.dataset.claim)});
+      toast(error ? error.message : '抢到了', 'worker-msg');
+      loadWorker();
+    };
+  });
+}
+
+function statusTag(s) {
+  const map = {accepted: ['进行中', 'on'], done: ['已完成', 'on'], pool: ['池子', ''], rejected: ['已拒绝', '']};
+  const [text, cls] = map[s] || [s, ''];
+  return `<span class="tag ${cls}">${text}</span>`;
+}
+
+function actions(t) {
+  if (t.status === 'done') return `<span class="muted">${esc(t.result || '')}</span>`;
+  return `
+    <button class="ghost" data-done="${t.id}">完成</button>
+    <button class="ghost" data-drop="${t.id}">放弃</button>`;
+}
+
+function bindActions() {
+  $('my-tasks').querySelectorAll('button[data-done]').forEach(btn => {
+    btn.onclick = () => markDone(Number(btn.dataset.done));
+  });
+  $('my-tasks').querySelectorAll('button[data-drop]').forEach(btn => {
+    btn.onclick = async () => {
+      const {error} = await sb.rpc('release_task', {p_task: Number(btn.dataset.drop)});
+      toast(error ? error.message : '已放回池子', 'worker-msg');
+      loadWorker();
+    };
+  });
+}
+
+async function markDone(id) {
+  const pick = prompt('结果？填数字\n1 = 已加上\n2 = 没通过\n3 = 已回复\n4 = 拉黑');
+  const map = {'1': '已加上', '2': '没通过', '3': '已回复', '4': '拉黑'};
+  const result = map[String(pick || '').trim()];
+  if (!result) return;
+  const {error} = await sb.from('tasks')
+    .update({status: 'done', result, done_at: new Date().toISOString()})
+    .eq('id', id);
+  toast(error ? error.message : '已标记完成', 'worker-msg');
+  loadWorker();
+}
+
+// ---------- 管理员 ----------
+document.querySelectorAll('.tabs button').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    ['board','import','users'].forEach(t => $('tab-' + t).classList.add('hide'));
+    $('tab-' + btn.dataset.tab).classList.remove('hide');
+    if (btn.dataset.tab === 'board') loadBoard();
+    if (btn.dataset.tab === 'users') loadUsers();
+  };
+});
+
+async function loadBoard() {
+  const {data: stats, error} = await sb.from('daily_stats').select('*');
+  if (error) { toast(error.message, 'admin-msg'); }
+  $('stats-body').innerHTML = (stats || []).map(s => `
+    <tr>
+      <td>${esc(s.username || '-')}</td>
+      <td>${s.quota ?? '-'}</td>
+      <td>${s.taken ?? 0}</td>
+      <td class="ok">${s.done ?? 0}</td>
+      <td>${s['已加上'] ?? 0}</td>
+      <td>${s['没通过'] ?? 0}</td>
+      <td>${s['已回复'] ?? 0}</td>
+      <td>${s['拉黑'] ?? 0}</td>
+    </tr>`).join('') || '<tr><td colspan="8" class="muted">还没有歌手账号</td></tr>';
+
+  const {data: tasks} = await sb.from('tasks').select('*')
+    .eq('work_date', today()).order('id', {ascending: false}).limit(300);
+  const {data: profs} = await sb.from('profiles').select('id,username');
+  const nameOf = {};
+  (profs || []).forEach(p => nameOf[p.id] = p.username);
+
+  $('all-tasks').innerHTML = (tasks || []).map(t => `
+    <tr>
+      <td>${esc(t.nickname)}</td>
+      <td class="muted">${esc(t.room || '-')}</td>
+      <td>${esc(t.score || '-')}</td>
+      <td>${t.level ? 'L' + t.level : '-'}</td>
+      <td class="muted">${esc(nameOf[t.assigned_to] || '池子')}</td>
+      <td>${statusTag(t.status)}</td>
+      <td>${esc(t.result || '-')}</td>
+    </tr>`).join('') || '<tr><td colspan="7" class="muted">今天还没有任务</td></tr>';
+}
+
+$('btn-reload').onclick = loadBoard;
+
+$('btn-generate').onclick = async () => {
+  const {data, error} = await sb.rpc('generate_daily_tasks');
+  toast(error ? error.message : `已生成 ${data} 条任务`, 'admin-msg');
+  loadBoard();
+};
+
+$('btn-import').onclick = async () => {
+  const text = $('import-text').value.trim();
+  if (!text) { toast('先粘贴内容', 'import-msg'); return; }
+  const rows = [];
+  for (const line of text.split(/\r?\n/)) {
+    const s = line.trim();
+    if (!s || s.startsWith('#')) continue;
+    const parts = s.split('|').map(x => x.trim());
+    if (!parts[0]) continue;
+    rows.push({
+      nickname: parts[0],
+      room: parts[1] || '',
+      score: parts[2] || '',
+      score_value: parseScore(parts[2]),
+      level: Number(parts[3] || 0) || 0,
+      shot: ''
+    });
+  }
+  if (!rows.length) { toast('没解析出内容', 'import-msg'); return; }
+  const {error} = await sb.from('candidates').upsert(rows, {onConflict: 'nickname,room', ignoreDuplicates: true});
+  toast(error ? error.message : `导入 ${rows.length} 条`, 'import-msg');
+};
+
+function parseScore(text) {
+  if (!text) return 0;
+  const m = String(text).trim().match(/^(\d+(?:\.\d+)?)\s*([KMkm]?)$/);
+  if (!m) return 0;
+  const v = parseFloat(m[1]);
+  const unit = (m[2] || '').toUpperCase();
+  return unit === 'K' ? v * 1000 : unit === 'M' ? v * 1e6 : v;
+}
+
+async function loadUsers() {
+  const {data} = await sb.from('profiles').select('*').order('created_at');
+  $('users-body').innerHTML = (data || []).map(p => `
+    <tr>
+      <td>${esc(p.username || '-')}</td>
+      <td>${p.role === 'admin' ? '管理员' : '歌手'}</td>
+      <td><input type="number" min="0" value="${p.quota ?? 10}" data-quota="${p.id}" style="min-width:80px"></td>
+      <td><button class="ghost" data-save="${p.id}">保存</button></td>
+    </tr>`).join('') || '<tr><td colspan="4" class="muted">还没有账号</td></tr>';
+
+  $('users-body').querySelectorAll('button[data-save]').forEach(btn => {
+    btn.onclick = async () => {
+      const id = btn.dataset.save;
+      const input = $('users-body').querySelector(`input[data-quota="${id}"]`);
+      const quota = Number(input.value) || 0;
+      const {error} = await sb.from('profiles').update({quota}).eq('id', id);
+      toast(error ? error.message : '已保存', 'admin-msg');
+    };
+  });
+}
+
+boot();
+</script>
+</body>
+</html>

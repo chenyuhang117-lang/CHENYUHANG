@@ -270,18 +270,38 @@
 
     <!-- 用户 -->
     <section id="pane-users" class="hide">
-      <div class="topbar"><div><h1>用户管理</h1><div class="sub">配额决定每人每天分到几条</div></div></div>
+      <div class="topbar"><div><h1>用户管理</h1><div class="sub">新建歌手账号、调整每天的任务数</div></div></div>
+
       <div class="card">
+        <h3>新建歌手</h3>
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+          <div>
+            <label class="sub" style="display:block;margin-bottom:6px">登录邮箱</label>
+            <input id="new-email" type="email" placeholder="singer1@task.local">
+          </div>
+          <div>
+            <label class="sub" style="display:block;margin-bottom:6px">初始密码</label>
+            <input id="new-password" type="text" placeholder="至少 6 位">
+          </div>
+          <div>
+            <label class="sub" style="display:block;margin-bottom:6px">每天任务数</label>
+            <input id="new-quota" type="number" min="0" value="10">
+          </div>
+        </div>
+        <div class="row" style="margin-top:14px">
+          <button class="btn primary" id="btn-create-user">创建账号</button>
+          <span class="sub" style="color:var(--dim);font-size:12px">建好后把邮箱和密码发给歌手即可登录</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>所有账号</h3>
         <div style="overflow:auto">
           <table>
             <thead><tr><th>用户名</th><th>角色</th><th>每日配额</th><th></th></tr></thead>
             <tbody id="users-body"></tbody>
           </table>
         </div>
-        <p class="sub" style="color:var(--dim);margin:14px 0 0;font-size:12px">
-          新增歌手：Supabase → Authentication → Users → Add user（勾 Auto Confirm），
-          回来这里把配额改成 10。
-        </p>
       </div>
     </section>
   </main>
@@ -568,6 +588,24 @@ $('btn-import').onclick = async () => {
   const {error} = await sb.from('candidates').upsert(rows, {onConflict: 'nickname,room', ignoreDuplicates: true});
   if (error) toast(error.message, true);
   else { toast(`导入 ${rows.length} 条`); $('import-text').value = ''; $('import-count').textContent = '待导入 0 行'; }
+};
+
+$('btn-create-user').onclick = async () => {
+  const email = $('new-email').value.trim();
+  const password = $('new-password').value;
+  const quota = Number($('new-quota').value) || 10;
+  if (!email || !password) { toast('邮箱和密码都要填', true); return; }
+  if (password.length < 6) { toast('密码至少 6 位', true); return; }
+  $('btn-create-user').disabled = true;
+  const {error} = await sb.rpc('create_worker', {
+    p_email: email, p_password: password, p_quota: quota
+  });
+  $('btn-create-user').disabled = false;
+  if (error) { toast(error.message, true); return; }
+  toast(`已创建 ${email}（每天 ${quota} 条）`);
+  $('new-email').value = '';
+  $('new-password').value = '';
+  loadUsers();
 };
 
 // 用户

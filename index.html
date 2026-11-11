@@ -307,6 +307,14 @@
   </main>
 </div>
 
+<div id="modal" class="hide" style="position:fixed;inset:0;background:rgba(0,0,0,.62);display:grid;place-items:center;z-index:60;padding:20px">
+  <div class="card" style="max-width:360px;width:100%">
+    <h3>这条做完了，结果是什么？</h3>
+    <div class="grid" style="gap:8px" id="modal-actions"></div>
+    <button class="btn ghost sm" id="modal-cancel" style="width:100%;margin-top:12px;justify-content:center">取消</button>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -315,10 +323,12 @@
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt = (n) => (n === null || n === undefined || n === '') ? '-' : Number(n).toLocaleString();
-const today = () => new Date().toLocaleDateString('sv-SE');
+// 「今天」一律按北京时间算，避免和数据库时区打架
+const today = () => new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
 
 const sb = supabase.createClient(CFG.url, CFG.key, {auth: {persistSession: true}});
 let me = null;
+let currentView = null;
 
 function toast(msg, isErr=false) {
   const el = $('toast');
@@ -340,12 +350,22 @@ function statusPill(s) {
 }
 
 function parseScore(text) {
+  // 预留：从 "1.5K" 这类写法换算成数字
   if (!text) return 0;
   const m = String(text).trim().match(/^(\d+(?:\.\d+)?)\s*([KMkm]?)$/);
   if (!m) return 0;
   const v = parseFloat(m[1]);
   const u = (m[2] || '').toUpperCase();
   return u === 'K' ? v * 1000 : u === 'M' ? v * 1e6 : v;
+}
+
+function friendlyError(error) {
+  const msg = (error && error.message) || String(error);
+  if (msg.includes('schema cache')) {
+    return '数据库还缺函数：请先执行 fix_all.sql';
+  }
+  if (msg.includes('已经注册过')) return '这个邮箱已经注册过了';
+  return msg;
 }
 
 // ---------------- 登录 ----------------
@@ -390,6 +410,7 @@ async function boot() {
 }
 
 function switchView(name) {
+  currentView = name;
   ['worker','board','import','users'].forEach(v => $('pane-' + v).classList.add('hide'));
   $('pane-' + name).classList.remove('hide');
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.view === name));
@@ -499,15 +520,31 @@ function bindTaskActions() {
 }
 
 async function markDone(id) {
-  const pick = prompt('选择结果：\n1 = 已加上\n2 = 没通过\n3 = 已回复\n4 = 拉黑');
-  const map = {'1':'已加上','2':'没通过','3':'已回复','4':'拉黑'};
-  const result = map[String(pick || '').trim()];
+  const result = await chooseResult();
   if (!result) return;
   const {error} = await sb.from('tasks')
     .update({status: 'done', result, done_at: new Date().toISOString()})
     .eq('id', id);
   if (error) toast(error.message, true); else toast('已标记完成');
   loadWorker();
+}
+
+function chooseResult() {
+  return new Promise((resolve) => {
+    const box = $('modal-actions');
+    box.innerHTML = '';
+    const done = (val) => { $('modal').classList.add('hide'); resolve(val); };
+    [['已加上', 'ok'], ['没通过', 'warn'], ['已回复', 'blue'], ['拉黑', 'ghost']].forEach(([label, cls]) => {
+      const btn = document.createElement('button');
+      btn.className = 'btn ' + cls;
+      btn.style.cssText = 'width:100%;justify-content:center';
+      btn.textContent = label;
+      btn.onclick = () => done(label);
+      box.appendChild(btn);
+    });
+    $('modal').classList.remove('hide');
+    $('modal-cancel').onclick = () => done(null);
+  });
 }
 
 // ---------------- 管理员 ----------------
@@ -601,7 +638,7 @@ $('btn-create-user').onclick = async () => {
     p_email: email, p_password: password, p_quota: quota
   });
   $('btn-create-user').disabled = false;
-  if (error) { toast(error.message, true); return; }
+  if (error) { toast(friendlyError(error), true); return; }
   toast(`已创建 ${email}（每天 ${quota} 条）`);
   $('new-email').value = '';
   $('new-password').value = '';
@@ -616,7 +653,10 @@ async function loadUsers() {
       <td>${esc(p.username || '-')}</td>
       <td>${p.role === 'admin' ? '<span class="pill red">管理员</span>' : '<span class="pill">歌手</span>'}</td>
       <td style="max-width:130px"><input type="number" min="0" value="${p.quota ?? 10}" data-quota="${p.id}"></td>
-      <td><button class="btn ghost sm" data-save="${p.id}">保存</button></td>
+      <td style="white-space:nowrap">
+        <button class="btn ghost sm" data-save="${p.id}">保存</button>
+        ${p.role === 'admin' ? '' : `<button class="btn warn sm" data-del="${p.id}" data-name="${esc(p.username || '')}">删除</button>`}
+      </td>
     </tr>`).join('') || '<tr><td colspan="4" class="empty">还没有账号</td></tr>';
 
   $('users-body').querySelectorAll('button[data-save]').forEach(btn => {
@@ -624,12 +664,30 @@ async function loadUsers() {
       const id = btn.dataset.save;
       const input = $('users-body').querySelector(`input[data-quota="${id}"]`);
       const {error} = await sb.from('profiles').update({quota: Number(input.value) || 0}).eq('id', id);
-      if (error) toast(error.message, true); else toast('已保存');
+      if (error) toast(friendlyError(error), true); else toast('已保存');
+    };
+  });
+
+  $('users-body').querySelectorAll('button[data-del]').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm(`删除账号「${btn.dataset.name}」？他名下的未完成任务会退回池子。`)) return;
+      btn.disabled = true;
+      const {error} = await sb.rpc('delete_worker', {p_user: btn.dataset.del});
+      btn.disabled = false;
+      if (error) toast(friendlyError(error), true);
+      else { toast('已删除'); loadUsers(); }
     };
   });
 }
 
 boot();
+
+// 每 20 秒自动刷新当前页（弹窗开着时不动）
+setInterval(() => {
+  if (!me || !$('modal').classList.contains('hide')) return;
+  if (currentView === 'board') loadBoard();
+  if (currentView === 'worker') loadWorker();
+}, 20000);
 </script>
 </body>
 </html>
